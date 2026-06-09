@@ -44,8 +44,96 @@ st.markdown("""
     .news-link:hover {
         text-decoration: underline;
     }
+    .country-badge {
+        display: inline-block;
+        padding: 5px 10px;
+        background-color: #667eea;
+        color: white;
+        border-radius: 20px;
+        font-size: 12px;
+        margin-bottom: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
+
+# Country data with Google News RSS URLs
+COUNTRIES = {
+    "🇮🇳 India": {
+        "code": "in",
+        "url": "https://news.google.com/rss?gl=IN&hl=en-IN",
+        "emoji": "🇮🇳"
+    },
+    "🇺🇸 United States": {
+        "code": "us",
+        "url": "https://news.google.com/rss?gl=US&hl=en-US",
+        "emoji": "🇺🇸"
+    },
+    "🇬🇧 United Kingdom": {
+        "code": "uk",
+        "url": "https://news.google.com/rss?gl=GB&hl=en-GB",
+        "emoji": "🇬🇧"
+    },
+    "🇨🇦 Canada": {
+        "code": "ca",
+        "url": "https://news.google.com/rss?gl=CA&hl=en-CA",
+        "emoji": "🇨🇦"
+    },
+    "🇦🇺 Australia": {
+        "code": "au",
+        "url": "https://news.google.com/rss?gl=AU&hl=en-AU",
+        "emoji": "🇦🇺"
+    },
+    "🇬🇪 Germany": {
+        "code": "de",
+        "url": "https://news.google.com/rss?gl=DE&hl=de",
+        "emoji": "🇬🇪"
+    },
+    "🇫🇷 France": {
+        "code": "fr",
+        "url": "https://news.google.com/rss?gl=FR&hl=fr",
+        "emoji": "🇫🇷"
+    },
+    "🇯🇵 Japan": {
+        "code": "jp",
+        "url": "https://news.google.com/rss?gl=JP&hl=ja",
+        "emoji": "🇯🇵"
+    },
+    "🇮🇹 Italy": {
+        "code": "it",
+        "url": "https://news.google.com/rss?gl=IT&hl=it",
+        "emoji": "🇮🇹"
+    },
+    "🇪🇸 Spain": {
+        "code": "es",
+        "url": "https://news.google.com/rss?gl=ES&hl=es",
+        "emoji": "🇪🇸"
+    },
+    "🇵🇰 Pakistan": {
+        "code": "pk",
+        "url": "https://news.google.com/rss?gl=PK&hl=en-PK",
+        "emoji": "🇵🇰"
+    },
+    "🇧🇩 Bangladesh": {
+        "code": "bd",
+        "url": "https://news.google.com/rss?gl=BD&hl=en-BD",
+        "emoji": "🇧🇩"
+    },
+    "🇸🇬 Singapore": {
+        "code": "sg",
+        "url": "https://news.google.com/rss?gl=SG&hl=en-SG",
+        "emoji": "🇸🇬"
+    },
+    "🇲🇾 Malaysia": {
+        "code": "my",
+        "url": "https://news.google.com/rss?gl=MY&hl=en-MY",
+        "emoji": "🇲🇾"
+    },
+    "🇮🇩 Indonesia": {
+        "code": "id",
+        "url": "https://news.google.com/rss?gl=ID&hl=id",
+        "emoji": "🇮🇩"
+    },
+}
 
 # Get Indian Standard Time (IST)
 ist = pytz.timezone('Asia/Kolkata')
@@ -59,6 +147,15 @@ st.markdown("Stay updated with the latest trending news from around the world!")
 with st.sidebar:
     st.header("⚙️ Settings")
     st.caption(f"🕐 Current Time (IST): {current_time_ist.strftime('%H:%M:%S')}")
+    
+    # Country selection
+    st.subheader("🌍 Select Country")
+    selected_country = st.selectbox(
+        "Choose a country",
+        options=list(COUNTRIES.keys()),
+        index=0,  # Default to India
+        help="Select the country for which you want to see trending news"
+    )
     
     # Display options
     num_articles = st.slider(
@@ -77,29 +174,33 @@ with st.sidebar:
         st.rerun()
     
     st.divider()
-    st.info("💡 This app fetches news directly from Google News RSS feed.")
+    st.info("💡 This app fetches news directly from Google News RSS feed for different countries.")
+
+# Get selected country data
+country_data = COUNTRIES[selected_country]
+country_emoji = country_data["emoji"]
+country_name = selected_country.split()[-1]  # Extract country name after emoji
 
 # Main content area
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("📊 Source", "Google News")
 with col2:
-    st.metric("⏰ Last Updated (IST)", current_time_ist.strftime("%H:%M:%S"))
+    st.metric(f"🌍 Country", country_name)
 with col3:
-    st.metric("📰 Articles", f"~{num_articles}")
+    st.metric("⏰ Last Updated (IST)", current_time_ist.strftime("%H:%M:%S"))
 
 st.divider()
 
-# Fetch trending news directly from Google News
+# Fetch trending news for selected country
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def fetch_trending_news(limit=10):
-    """Fetch trending news directly from Google News RSS feed"""
+def fetch_trending_news(country_url, limit=50):
+    """Fetch trending news from Google News RSS feed for selected country"""
     try:
-        url = "https://news.google.com/rss"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
-        response = requests.get(url, timeout=10, headers=headers)
+        response = requests.get(country_url, timeout=10, headers=headers)
         response.raise_for_status()
         
         # Parse the RSS feed
@@ -154,7 +255,9 @@ def extract_source(title, summary):
             'BBC', 'CNN', 'Reuters', 'AP News', 'The Times', 'The Guardian',
             'The New York Times', 'Washington Post', 'Bloomberg', 'CNBC',
             'NBC', 'ABC', 'CBS', 'Fox', 'The Hill', 'Axios', 'Politico',
-            'India Times', 'NDTV', 'The Hindu', 'Economic Times', 'India Today'
+            'India Times', 'NDTV', 'The Hindu', 'Economic Times', 'India Today',
+            'Times of India', 'Hindustan Times', 'Deccan Herald', 'The Telegraph',
+            'DW', 'France24', 'BBC News', 'Sky News', 'ITV', 'ARD'
         ]
         
         # Search in title
@@ -260,11 +363,11 @@ search_query = st.text_input(
     help="Filter articles by keywords in the title"
 )
 
-# Fetch data
-news_articles = fetch_trending_news(limit=50)
+# Fetch data for selected country
+news_articles = fetch_trending_news(country_data["url"], limit=50)
 
 if not news_articles:
-    st.warning("📭 No articles found. Please try again later.")
+    st.warning(f"📭 No articles found for {selected_country}. Please try again later.")
 else:
     # Filter by search query
     if search_query:
@@ -317,6 +420,9 @@ else:
                 with col2:
                     st.markdown(f"### {article.get('title', 'No Title')}")
                     
+                    # Country badge
+                    st.markdown(f'<span class="country-badge">{country_emoji} {country_name}</span>', unsafe_allow_html=True)
+                    
                     # Source badge
                     source = article.get('source', 'News')
                     st.caption(f"📍 Source: {source}")
@@ -339,13 +445,13 @@ else:
                 
                 st.divider()
 
-# Footer
+# Footer with country info
 st.markdown("---")
 col1, col2, col3 = st.columns(3)
 with col1:
     st.caption("📱 Built with Streamlit")
 with col2:
-    st.caption("🔗 Powered by Google News RSS")
+    st.caption(f"🔗 Powered by Google News RSS - {country_name}")
 with col3:
     st.caption("🇮🇳 IST - Indian Standard Time")
 
