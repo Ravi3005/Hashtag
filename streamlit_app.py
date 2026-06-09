@@ -1,5 +1,7 @@
 import streamlit as st
 import requests
+import feedparser
+import re
 from datetime import datetime
 import time
 
@@ -51,20 +53,6 @@ st.markdown("Stay updated with the latest trending news from around the world!")
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # API server configuration
-    api_host = st.text_input(
-        "API Server Host",
-        value="localhost",
-        help="Hostname of the Flask API server"
-    )
-    api_port = st.number_input(
-        "API Server Port",
-        value=5000,
-        min_value=1,
-        max_value=65535,
-        help="Port of the Flask API server"
-    )
-    
     # Display options
     num_articles = st.slider(
         "Number of articles to display",
@@ -78,10 +66,11 @@ with st.sidebar:
     st.subheader("Refresh Settings")
     auto_refresh = st.checkbox("Auto-refresh (every 5 minutes)", value=False)
     if st.button("🔄 Refresh Now", use_container_width=True):
+        st.cache_data.clear()
         st.rerun()
     
     st.divider()
-    st.info("💡 The API server must be running at the configured address for this to work.")
+    st.info("💡 This app fetches news directly from Google News RSS feed.")
 
 # Main content area
 col1, col2, col3 = st.columns(3)
@@ -94,22 +83,50 @@ with col3:
 
 st.divider()
 
-# Fetch trending news
+# Fetch trending news directly from Google News
 @st.cache_data(ttl=300)  # Cache for 5 minutes
-def fetch_trending_news(host, port):
-    """Fetch trending news from the Flask API"""
+def fetch_trending_news(limit=10):
+    """Fetch trending news directly from Google News RSS feed"""
     try:
-        url = f"http://{host}:{port}/trending"
-        response = requests.get(url, timeout=10)
+        url = "https://news.google.com/rss"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, timeout=10, headers=headers)
         response.raise_for_status()
-        data = response.json()
-        return data.get("trending_news", [])
-    except requests.exceptions.ConnectionError:
-        st.error(f"❌ Cannot connect to API server at {host}:{port}")
-        st.info("Make sure the Flask server is running: `python app.py`")
-        return []
+        
+        # Parse the RSS feed
+        feed = feedparser.parse(response.content)
+        
+        if not feed.entries:
+            return []
+        
+        # Process articles
+        news_articles = []
+        for entry in feed.entries[:limit]:
+            try:
+                title = entry.get("title", "No Title")
+                link = entry.get("link", "#")
+                summary = entry.get("summary", "")
+                published = entry.get("published", "Unknown date")
+                
+                # Extract thumbnail from summary
+                thumbnail = extract_thumbnail(summary)
+                
+                news_item = {
+                    "title": title,
+                    "link": link,
+                    "thumbnail": thumbnail,
+                    "published": published
+                }
+                news_articles.append(news_item)
+            except Exception as e:
+                continue
+        
+        return news_articles
+    
     except requests.exceptions.Timeout:
-        st.error("❌ API request timed out. The server might be slow.")
+        st.error("❌ Request timed out. Please try again later.")
         return []
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Error fetching news: {str(e)}")
@@ -117,6 +134,20 @@ def fetch_trending_news(host, port):
     except Exception as e:
         st.error(f"❌ Unexpected error: {str(e)}")
         return []
+
+def extract_thumbnail(summary):
+    """Extract image URL from HTML summary"""
+    try:
+        if not summary:
+            return "https://via.placeholder.com/150"
+        
+        match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary)
+        if match:
+            return match.group(1)
+        else:
+            return "https://via.placeholder.com/150"
+    except:
+        return "https://via.placeholder.com/150"
 
 # Search and filter options
 st.subheader("🔍 Search & Filter")
@@ -127,10 +158,10 @@ search_query = st.text_input(
 )
 
 # Fetch data
-news_articles = fetch_trending_news(api_host, api_port)
+news_articles = fetch_trending_news(limit=50)
 
 if not news_articles:
-    st.warning("📭 No articles found. Please check your API server configuration.")
+    st.warning("📭 No articles found. Please try again later.")
 else:
     # Filter by search query
     if search_query:
@@ -162,7 +193,6 @@ else:
                             caption=f"Article {idx}"
                         )
                     except Exception as e:
-                        st.error(f"Could not load image: {str(e)}")
                         st.image("https://via.placeholder.com/150", use_column_width=True)
                 
                 # Article details
@@ -195,6 +225,5 @@ with col3:
 
 # Auto-refresh functionality
 if auto_refresh:
-    import time
     time.sleep(300)  # Wait 5 minutes
     st.rerun()
