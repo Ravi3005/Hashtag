@@ -1,6 +1,6 @@
 streamlit
 requests
 flask
+flask-cors
 feedparser
 waitress
-
