@@ -3,6 +3,7 @@ import requests
 import feedparser
 import re
 from datetime import datetime
+import pytz
 import time
 
 # Page configuration
@@ -45,6 +46,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Get Indian Standard Time (IST)
+ist = pytz.timezone('Asia/Kolkata')
+current_time_ist = datetime.now(ist)
+
 # Title and description
 st.title("📰 Trending News Dashboard")
 st.markdown("Stay updated with the latest trending news from around the world!")
@@ -52,6 +57,7 @@ st.markdown("Stay updated with the latest trending news from around the world!")
 # Sidebar configuration
 with st.sidebar:
     st.header("⚙️ Settings")
+    st.caption(f"🕐 Current Time (IST): {current_time_ist.strftime('%H:%M:%S')}")
     
     # Display options
     num_articles = st.slider(
@@ -77,7 +83,7 @@ col1, col2, col3 = st.columns(3)
 with col1:
     st.metric("📊 Source", "Google News")
 with col2:
-    st.metric("⏰ Last Updated", datetime.now().strftime("%H:%M:%S"))
+    st.metric("⏰ Last Updated (IST)", current_time_ist.strftime("%H:%M:%S"))
 with col3:
     st.metric("📰 Articles", f"~{num_articles}")
 
@@ -149,6 +155,21 @@ def extract_thumbnail(summary):
     except:
         return "https://via.placeholder.com/150"
 
+def convert_to_ist(date_string):
+    """Convert article published date to IST format"""
+    try:
+        # Try to parse the date string (handles common RSS date formats)
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(date_string)
+        
+        # Convert to IST
+        if dt.tzinfo is None:
+            dt = pytz.UTC.localize(dt)
+        ist_time = dt.astimezone(ist)
+        return ist_time.strftime("%d %b %Y, %H:%M:%S IST")
+    except:
+        return date_string
+
 # Search and filter options
 st.subheader("🔍 Search & Filter")
 search_query = st.text_input(
@@ -199,6 +220,10 @@ else:
                 with col2:
                     st.markdown(f"### {article.get('title', 'No Title')}")
                     
+                    # Published date in IST
+                    published_ist = convert_to_ist(article.get("published", "Unknown date"))
+                    st.caption(f"📅 Published: {published_ist}")
+                    
                     # Read more button
                     link = article.get("link", "#")
                     if link != "#":
@@ -221,7 +246,7 @@ with col1:
 with col2:
     st.caption("🔗 Powered by Google News RSS")
 with col3:
-    st.caption("🚀 Real-time trending news")
+    st.caption("🇮🇳 IST - Indian Standard Time")
 
 # Auto-refresh functionality
 if auto_refresh:
