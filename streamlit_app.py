@@ -5,8 +5,7 @@ import re
 from datetime import datetime
 import pytz
 import time
-from html.parser import HTMLParser
-from urllib.parse import urlparse
+from bs4 import BeautifulSoup
 
 # Page configuration
 st.set_page_config(
@@ -118,14 +117,18 @@ def fetch_trending_news(limit=10):
                 summary = entry.get("summary", "")
                 published = entry.get("published", "Unknown date")
                 
+                # Extract source
+                source = extract_source(title, summary)
+                
                 # Extract thumbnail from summary
-                thumbnail = extract_thumbnail(summary)
+                thumbnail = extract_thumbnail_from_html(summary)
                 
                 news_item = {
                     "title": title,
                     "link": link,
                     "thumbnail": thumbnail,
-                    "published": published
+                    "published": published,
+                    "source": source
                 }
                 news_articles.append(news_item)
             except Exception as e:
@@ -143,72 +146,91 @@ def fetch_trending_news(limit=10):
         st.error(f"❌ Unexpected error: {str(e)}")
         return []
 
-def extract_thumbnail(summary):
-    """Extract image URL from HTML summary - multiple methods"""
+def extract_source(title, summary):
+    """Extract news source from title or summary"""
     try:
-        if not summary:
-            return "https://via.placeholder.com/150?text=No+Image"
+        # Common news sources
+        sources = [
+            'BBC', 'CNN', 'Reuters', 'AP News', 'The Times', 'The Guardian',
+            'The New York Times', 'Washington Post', 'Bloomberg', 'CNBC',
+            'NBC', 'ABC', 'CBS', 'Fox', 'The Hill', 'Axios', 'Politico',
+            'India Times', 'NDTV', 'The Hindu', 'Economic Times', 'India Today'
+        ]
         
-        # Method 1: Direct img src attribute
-        match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary)
-        if match:
-            img_url = match.group(1)
-            # Validate URL
-            if is_valid_image_url(img_url):
-                return img_url
+        # Search in title
+        for source in sources:
+            if source.lower() in title.lower():
+                return source
         
-        # Method 2: Look for image tags with data-src (lazy loading)
-        match = re.search(r'<img[^>]+data-src=["\']([^"\']+)["\']', summary)
-        if match:
-            img_url = match.group(1)
-            if is_valid_image_url(img_url):
-                return img_url
+        # Search in summary
+        for source in sources:
+            if source.lower() in summary.lower():
+                return source
         
-        # Method 3: Look for img inside picture tag
-        match = re.search(r'<picture>.*?<img[^>]+src=["\']([^"\']+)["\']', summary, re.DOTALL)
-        if match:
-            img_url = match.group(1)
-            if is_valid_image_url(img_url):
-                return img_url
+        # Default
+        return "News"
+    except:
+        return "News"
+
+def extract_thumbnail_from_html(html_content):
+    """Extract image URL from HTML content using BeautifulSoup"""
+    try:
+        if not html_content:
+            return None
         
-        # Method 4: Extract from srcset
-        match = re.search(r'srcset=["\']([^"\']+)', summary)
-        if match:
-            srcset = match.group(1)
-            # Get first URL from srcset
-            img_url = srcset.split()[0]
-            if is_valid_image_url(img_url):
-                return img_url
+        soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Fallback
-        return "https://via.placeholder.com/150?text=News+Image"
+        # Find all img tags
+        img_tags = soup.find_all('img')
         
-    except Exception as e:
-        st.write(f"Debug - Image extraction error: {str(e)}")
-        return "https://via.placeholder.com/150?text=News+Image"
+        for img in img_tags:
+            src = img.get('src')
+            data_src = img.get('data-src')
+            
+            # Try src first
+            if src and is_valid_image_url(src):
+                return src
+            
+            # Try data-src for lazy loaded images
+            if data_src and is_valid_image_url(data_src):
+                return data_src
+        
+        # Look for picture tag with source
+        picture = soup.find('picture')
+        if picture:
+            img = picture.find('img')
+            if img:
+                src = img.get('src')
+                if src and is_valid_image_url(src):
+                    return src
+        
+        return None
+    except:
+        return None
 
 def is_valid_image_url(url):
     """Check if URL is a valid image URL"""
     try:
-        # Check if URL starts with http
+        if not url:
+            return False
+        
+        # Check if URL starts with http or //
         if not url.startswith(('http://', 'https://', '//')):
             return False
         
-        # Check if URL has image extension or domain
+        # Check for image extensions or known CDN domains
         image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg')
-        valid_domains = ('lh3.googleusercontent.com', 'cdn', 'images', 'img', 'static')
-        
         url_lower = url.lower()
         
-        # Check extensions
+        # Check image extensions
         if any(url_lower.endswith(ext) for ext in image_extensions):
             return True
         
-        # Check domains commonly used for images
-        if any(domain in url_lower for domain in valid_domains):
+        # Check for common image CDNs
+        if any(cdn in url_lower for cdn in ['lh3.googleusercontent.com', 'cdn', 'images', 'img', 'static', 'media']):
             return True
         
-        # If URL has query params, likely an image service
+        # Query params likely indicate image service
         if '?' in url:
             return True
         
@@ -219,7 +241,6 @@ def is_valid_image_url(url):
 def convert_to_ist(date_string):
     """Convert article published date to IST format"""
     try:
-        # Try to parse the date string (handles common RSS date formats)
         from email.utils import parsedate_to_datetime
         dt = parsedate_to_datetime(date_string)
         
@@ -266,22 +287,39 @@ else:
             with st.container():
                 col1, col2 = st.columns([1, 3])
                 
-                # Thumbnail
+                # Thumbnail or placeholder
                 with col1:
-                    try:
-                        thumbnail_url = article.get("thumbnail", "https://via.placeholder.com/150?text=News")
-                        st.image(
-                            thumbnail_url,
-                            use_column_width=True,
-                            caption=f"Article {idx}",
-                            width=150
-                        )
-                    except Exception as e:
-                        st.image("https://via.placeholder.com/150?text=No+Image", use_column_width=True)
+                    thumbnail_url = article.get("thumbnail")
+                    
+                    if thumbnail_url:
+                        try:
+                            st.image(
+                                thumbnail_url,
+                                use_column_width=True,
+                                caption=f"Article {idx}"
+                            )
+                        except:
+                            # Fallback if image fails to load
+                            st.markdown(f"""
+                            <div style="width:100%; height:150px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:8px; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;">
+                            📰 {article.get('source', 'News')}
+                            </div>
+                            """, unsafe_allow_html=True)
+                    else:
+                        # Gradient placeholder with source
+                        st.markdown(f"""
+                        <div style="width:100%; height:150px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:8px; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold; text-align:center;">
+                        📰 {article.get('source', 'News')}<br>Article {idx}
+                        </div>
+                        """, unsafe_allow_html=True)
                 
                 # Article details
                 with col2:
                     st.markdown(f"### {article.get('title', 'No Title')}")
+                    
+                    # Source badge
+                    source = article.get('source', 'News')
+                    st.caption(f"📍 Source: {source}")
                     
                     # Published date in IST
                     published_ist = convert_to_ist(article.get("published", "Unknown date"))
