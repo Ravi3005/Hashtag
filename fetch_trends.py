@@ -2,6 +2,7 @@ import feedparser
 import re
 from datetime import datetime
 import logging
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,8 +23,15 @@ def get_trending_news(num_articles=10, timeout=10):
     trending_news = []
     
     try:
-        # Parse the RSS feed with timeout
-        feed = feedparser.parse(url, timeout=timeout)
+        # Use requests with timeout, then parse with feedparser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, timeout=timeout, headers=headers)
+        response.raise_for_status()
+        
+        # Parse the RSS feed
+        feed = feedparser.parse(response.content)
         
         # Check if feed parsing was successful
         if not feed.entries:
@@ -60,8 +68,14 @@ def get_trending_news(num_articles=10, timeout=10):
         logger.info(f"Successfully fetched {len(trending_news)} articles")
         return trending_news
     
-    except Exception as e:
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout fetching Google News feed after {timeout} seconds")
+        return trending_news
+    except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching Google News feed: {str(e)}")
+        return trending_news
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
         return trending_news
 
 def extract_thumbnail(summary):
