@@ -5,6 +5,8 @@ import re
 from datetime import datetime
 import pytz
 import time
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 
 # Page configuration
 st.set_page_config(
@@ -142,18 +144,77 @@ def fetch_trending_news(limit=10):
         return []
 
 def extract_thumbnail(summary):
-    """Extract image URL from HTML summary"""
+    """Extract image URL from HTML summary - multiple methods"""
     try:
         if not summary:
-            return "https://via.placeholder.com/150"
+            return "https://via.placeholder.com/150?text=No+Image"
         
+        # Method 1: Direct img src attribute
         match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary)
         if match:
-            return match.group(1)
-        else:
-            return "https://via.placeholder.com/150"
+            img_url = match.group(1)
+            # Validate URL
+            if is_valid_image_url(img_url):
+                return img_url
+        
+        # Method 2: Look for image tags with data-src (lazy loading)
+        match = re.search(r'<img[^>]+data-src=["\']([^"\']+)["\']', summary)
+        if match:
+            img_url = match.group(1)
+            if is_valid_image_url(img_url):
+                return img_url
+        
+        # Method 3: Look for img inside picture tag
+        match = re.search(r'<picture>.*?<img[^>]+src=["\']([^"\']+)["\']', summary, re.DOTALL)
+        if match:
+            img_url = match.group(1)
+            if is_valid_image_url(img_url):
+                return img_url
+        
+        # Method 4: Extract from srcset
+        match = re.search(r'srcset=["\']([^"\']+)', summary)
+        if match:
+            srcset = match.group(1)
+            # Get first URL from srcset
+            img_url = srcset.split()[0]
+            if is_valid_image_url(img_url):
+                return img_url
+        
+        # Fallback
+        return "https://via.placeholder.com/150?text=News+Image"
+        
+    except Exception as e:
+        st.write(f"Debug - Image extraction error: {str(e)}")
+        return "https://via.placeholder.com/150?text=News+Image"
+
+def is_valid_image_url(url):
+    """Check if URL is a valid image URL"""
+    try:
+        # Check if URL starts with http
+        if not url.startswith(('http://', 'https://', '//')):
+            return False
+        
+        # Check if URL has image extension or domain
+        image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg')
+        valid_domains = ('lh3.googleusercontent.com', 'cdn', 'images', 'img', 'static')
+        
+        url_lower = url.lower()
+        
+        # Check extensions
+        if any(url_lower.endswith(ext) for ext in image_extensions):
+            return True
+        
+        # Check domains commonly used for images
+        if any(domain in url_lower for domain in valid_domains):
+            return True
+        
+        # If URL has query params, likely an image service
+        if '?' in url:
+            return True
+        
+        return False
     except:
-        return "https://via.placeholder.com/150"
+        return False
 
 def convert_to_ist(date_string):
     """Convert article published date to IST format"""
@@ -208,13 +269,15 @@ else:
                 # Thumbnail
                 with col1:
                     try:
+                        thumbnail_url = article.get("thumbnail", "https://via.placeholder.com/150?text=News")
                         st.image(
-                            article.get("thumbnail", "https://via.placeholder.com/150"),
+                            thumbnail_url,
                             use_column_width=True,
-                            caption=f"Article {idx}"
+                            caption=f"Article {idx}",
+                            width=150
                         )
                     except Exception as e:
-                        st.image("https://via.placeholder.com/150", use_column_width=True)
+                        st.image("https://via.placeholder.com/150?text=No+Image", use_column_width=True)
                 
                 # Article details
                 with col2:
